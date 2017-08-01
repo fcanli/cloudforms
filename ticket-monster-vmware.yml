@@ -1,0 +1,77 @@
+---
+- name: Create new VMs on VMware provider
+  hosts: localhost
+  gather_facts: false
+  connection: local
+
+  vars:
+    provider_id: "{{ vmware_provider_id  | default('10000000000001') }}"
+    max_retries: 9
+    retry_interval: 20
+    db_vm: "{{ 'db-' + manageiq.service }}"
+    app_vm: "{{ 'app-' + manageiq.service }}"
+    region:   us-east-1
+    ami:      ami-81cf0c97
+    keypair:  "{{ ec2_keypair_name | default('aws-jmarc') }}"
+    set_dns:  False
+    count:    2
+    tags_db:
+      env:  "{{ tags_env  | default('prod') }}"
+      type: "{{ tags_type | default('db') }}"
+    tags_app:
+      env:  "{{ tags_env  | default('prod') }}"
+      type: "{{ tags_type | default('app') }}"
+    wait_for_ssh: False
+    provider_id: "{{ provider_id }}"
+    max_retries: 9
+    retry_interval: 20
+
+  tasks:
+    - debug: var=vcenter_hostname
+    - debug: var=esxi_host
+    - debug: var=datacenter
+    - debug: var=template
+    - debug: var=manageiq.api_url
+    - debug: var=manageiq.api_token
+    - debug: var=manageiq.service
+    - debug: var=db_vm
+    - debug: var=app_vm
+
+    - name: Set the Provider URL
+      set_fact:
+        provider_url: "{{ manageiq.api_url }}/api/providers/{{ provider_id }}"
+
+    - name: Set the Service URL
+      set_fact:
+        svc_url: "/api/{{ manageiq.service }}"
+
+    - debug: var=svc_url
+
+    - name: Launch APP and DB instances
+      vsphere_guest:
+        validate_certs: no
+        vcenter_hostname: "{{ vcenter_hostname }}"
+        name: "{{ item }}"
+        power_on_after_clone: no
+        from_template: yes
+        template_src: "{{ template }}"
+        esxi:
+          datacenter: "{{ datacenter }}"
+          hostname: "{{ esxi_host }}"
+      with_items:
+        - db_vm
+        - app_vm
+
+    - name: Gather the facts for App and DB VMs
+      vsphere_guest:
+        validate_certs: no
+        hostname: "{{ vcenter_hostname }}"
+        name: "{{ db_vm }}"
+        vmware_guest_facts: yes
+      register: new_vms
+      with_items:
+        - db_vm
+        - app_vm
+
+
+    - debug: var=new_vms
