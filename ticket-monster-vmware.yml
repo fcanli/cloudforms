@@ -56,6 +56,20 @@
         - "{{ db_vm }}"
         - "{{ app_vm }}"
 
+    - name: Wait for VMs to get their IP addresses
+      vsphere_guest:
+        validate_certs: no
+        vcenter_hostname: "{{ vcenter_hostname }}"
+        guest: "{{ item }}"
+        vmware_guest_facts: yes
+      register: new_vms
+      with_items:
+        - "{{ db_vm }}"
+        - "{{ app_vm }}"
+      until: new_vms.results[0].ansible_facts.hw_eth0.ipaddresses and new_vms.results[1].ansible_facts.hw_eth0.ipaddresses
+      retries: "{{max_retries}}"
+      delay: "{{retry_interval}}"
+
     - name: Gather the facts for App and DB VMs
       vsphere_guest:
         validate_certs: no
