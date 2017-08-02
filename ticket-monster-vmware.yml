@@ -45,7 +45,7 @@
       vsphere_guest:
         validate_certs: no
         vcenter_hostname: "{{ vcenter_hostname }}"
-        name: "{{ item }}"
+        guest: "{{ item }}"
         power_on_after_clone: no
         from_template: yes
         template_src: "{{ template }}"
@@ -66,6 +66,5 @@
       with_items:
         - db_vm
         - app_vm
-
 
     - debug: var=new_vms
