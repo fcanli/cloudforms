@@ -69,8 +69,8 @@
 
     - debug: var=new_vms
 
-    - set_fact: db_vm_uuid="{{ new_vms[0].ansible_facts.hw_product_uuid }}"
-    - set_fact: app_vm_uuid="{{ new_vms[1].ansible_facts.hw_product_uuid }}"
+    - set_fact: db_vm_uuid="{{ new_vms.results[0].ansible_facts.hw_product_uuid }}"
+    - set_fact: app_vm_uuid="{{ new_vms.results[1].ansible_facts.hw_product_uuid }}"
 
     - debug: var=db_vm_uuid
     - debug: var=app_vm_uuid
