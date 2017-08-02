@@ -17,8 +17,6 @@
       env:  "{{ tags_env  | default('prod') }}"
       type: "{{ tags_type | default('app') }}"
     wait_for_ssh: False
-    max_retries: 9
-    retry_interval: 20
 
   tasks:
     - debug: var=vcenter_hostname
