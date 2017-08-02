@@ -6,7 +6,6 @@
   vars:
     provider_id: "{{ vmware_provider_id  | default('1000000000003') }}"
     auto_generated_vm_name: "{{ 'vm-' + manageiq.service | replace('/','-') }}"
-    guest: "{{ vm_name | default(\"{{ auto_generated_vm_name }}\") }}"
     max_retries: 9
     retry_interval: 20
 
@@ -15,6 +14,7 @@
     - debug: var=esxi_host
     - debug: var=datacenter
     - debug: var=template
+    - debug: var=auto_generated_vm_name
     - debug: var=manageiq.api_url
     - debug: var=manageiq.api_token
     - debug: var=manageiq.service
@@ -33,7 +33,7 @@
       vsphere_guest:
         validate_certs: no
         vcenter_hostname: "{{ vcenter_hostname }}"
-        guest: "{{ guest }}"
+        guest: "{{ auto_generated_vm_name }}"
         power_on_after_clone: no
         from_template: yes
         template_src: "{{ template }}"
@@ -45,7 +45,7 @@
       vsphere_guest:
         validate_certs: no
         vcenter_hostname: "{{ vcenter_hostname }}"
-        guest: "{{ guest }}"
+        guest: "{{ auto_generated_vm_name }}"
         vmware_guest_facts: yes
       register: new_vm
 
