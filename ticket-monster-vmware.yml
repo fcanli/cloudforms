@@ -53,18 +53,18 @@
           datacenter: "{{ datacenter }}"
           hostname: "{{ esxi_host }}"
       with_items:
-        - db_vm
-        - app_vm
+        - "{{ db_vm }}"
+        - "{{ app_vm }}"
 
     - name: Gather the facts for App and DB VMs
       vsphere_guest:
         validate_certs: no
-        hostname: "{{ vcenter_hostname }}"
-        name: "{{ db_vm }}"
+        vcenter_hostname: "{{ vcenter_hostname }}"
+        guest: "{{ item }}"
         vmware_guest_facts: yes
       register: new_vms
       with_items:
-        - db_vm
-        - app_vm
+        - "{{ db_vm }}"
+        - "{{ app_vm }}"
 
     - debug: var=new_vms
