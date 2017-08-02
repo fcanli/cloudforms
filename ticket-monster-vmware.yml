@@ -42,16 +42,14 @@
     - debug: var=svc_url
 
     - name: Launch APP and DB instances
-      vsphere_guest:
+      vmware_guest:
         validate_certs: no
-        vcenter_hostname: "{{ vcenter_hostname }}"
-        guest: "{{ item }}"
-        power_on_after_clone: yes
-        from_template: yes
-        template_src: "{{ template }}"
-        esxi:
-          datacenter: "{{ datacenter }}"
-          hostname: "{{ esxi_host }}"
+        hostname: "{{ vcenter_hostname }}"
+        name: "{{ item }}"
+        state: poweredon
+        template: "{{ template }}"
+        datacenter: "{{ datacenter }}"
+        wait_for_ip_address: yes
       with_items:
         - "{{ db_vm }}"
         - "{{ app_vm }}"
