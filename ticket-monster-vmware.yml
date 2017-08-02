@@ -5,16 +5,11 @@
   connection: local
 
   vars:
-    provider_id: "{{ vmware_provider_id  | default('10000000000001') }}"
+    provider_id: "{{ vmware_provider_id  | default('1000000000003') }}"
     max_retries: 9
     retry_interval: 20
-    db_vm: "{{ 'db-' + manageiq.service }}"
-    app_vm: "{{ 'app-' + manageiq.service }}"
-    region:   us-east-1
-    ami:      ami-81cf0c97
-    keypair:  "{{ ec2_keypair_name | default('aws-jmarc') }}"
-    set_dns:  False
-    count:    2
+    db_vm: "{{ 'db-' + manageiq.service | replace('/','-') }}"
+    app_vm: "{{ 'app-' + manageiq.service | replace('/','-') }}"
     tags_db:
       env:  "{{ tags_env  | default('prod') }}"
       type: "{{ tags_type | default('db') }}"
@@ -22,7 +17,6 @@
       env:  "{{ tags_env  | default('prod') }}"
       type: "{{ tags_type | default('app') }}"
     wait_for_ssh: False
-    provider_id: "{{ provider_id }}"
     max_retries: 9
     retry_interval: 20
 
