@@ -1,0 +1,261 @@
+---
+- name: Create new VMs on VMware provider
+  hosts: localhost
+  gather_facts: false
+  connection: local
+
+  vars:
+    provider_id: "{{ vmware_provider_id  | default('1000000000003') }}"
+    max_retries: 9
+    retry_interval: 20
+    db_vm: "{{ 'db-' + manageiq.service | replace('/','-') }}"
+    app_vm: "{{ 'app-' + manageiq.service | replace('/','-') }}"
+    wait_for_ssh: False
+
+  tasks:
+    - debug: var=vcenter_hostname
+    - debug: var=esxi_host
+    - debug: var=datacenter
+    - debug: var=template
+    - debug: var=manageiq.api_url
+    - debug: var=manageiq.api_token
+    - debug: var=manageiq.service
+    - debug: var=db_vm
+    - debug: var=app_vm
+    - debug: var=app_ip
+    - debug: var=db_ip
+
+    - name: Set the Provider URL
+      set_fact:
+        provider_url: "{{ manageiq.api_url }}/api/providers/{{ provider_id }}"
+
+    - name: Set the Service URL
+      set_fact:
+        svc_url: "/api/{{ manageiq.service }}"
+
+    - debug: var=svc_url
+
+    - name: Create APP VM
+      vmware_guest:
+        hostname: "{{ vcenter_hostname }}"
+        validate_certs: no
+        datacenter: "{{ datacenter }}"
+        cluster: "{{ esxi_cluster }}"
+        name: "{{ app_vm }}"
+        state: poweredon
+        guest_id: rhel7_64Guest
+        networks:
+        - name: "{{ vm_network }}"
+          ip: "{{ app_ip }}"
+          netmask: 255.255.255.0
+        template: "{{ template }}"
+        wait_for_ip_address: yes
+      register: deploy
+    
+    - name: Create DB VM
+      vmware_guest:
+        hostname: "{{ vcenter_hostname }}"
+        validate_certs: no
+        datacenter: "{{ datacenter }}"
+        cluster: "{{ esxi_cluster }}"
+        name: "{{ db_vm }}"
+        state: poweredon
+        guest_id: rhel7_64Guest
+        networks:
+        - name: "{{ vm_network }}"
+          ip: "{{ db_ip }}"
+          netmask: 255.255.255.0
+        template: "{{ template }}"
+        wait_for_ip_address: yes
+
+    - name: Gather the facts for App and DB VMs
+      vsphere_guest:
+        validate_certs: no
+        vcenter_hostname: "{{ vcenter_hostname }}"
+        guest: "{{ item }}"
+        vmware_guest_facts: yes
+      register: new_vms
+      with_items:
+        - "{{ db_vm }}"
+        - "{{ app_vm }}"
+
+    - debug: var=new_vms
+
+    - set_fact: db_vm_uuid="{{ new_vms.results[0].ansible_facts.hw_product_uuid }}"
+    - set_fact: app_vm_uuid="{{ new_vms.results[1].ansible_facts.hw_product_uuid }}"
+    - set_fact: db_vm_ip="{{ new_vms.results[0].ansible_facts.hw_eth0.ipaddresses[0] }}"
+    - set_fact: app_vm_ip="{{ new_vms.results[1].ansible_facts.hw_eth0.ipaddresses[0] }}"
+
+    - debug: var=db_vm_uuid
+    - debug: var=app_vm_uuid
+    - debug: var=db_vm_ip
+    - debug: var=app_vm_ip
+
+    - name: Add DB instance to a group
+      add_host:
+        name: "{{ db_vm_ip }}"
+        groups: db_provisioned
+
+    - name: Add App instance to a group
+      add_host:
+        name: "{{ app_vm_ip }}"
+        groups: app_provisioned
+
+    - name: Wait for SSH to come up
+      wait_for:
+        host: "{{ item }}"
+        port: 22
+        delay: 1
+        timeout: 320
+        state: started
+      with_items:
+        - "{{ db_vm_ip }}"
+        - "{{ app_vm_ip }}"
+
+    - name: Refresh provider in CloudForms
+      uri:
+        url: "{{ provider_url }}"
+        method: POST
+        body:
+          action: refresh
+        body_format: json
+        validate_certs: False
+        headers:
+          X-Auth-Token: "{{ manageiq.api_token }}"
+          Content-Type: "application/json"
+        status_code: 200
+      register: output
+    - debug: var=output
+
+    - name: set the task href
+      set_fact:
+        task_url: "{{ output.json.task_href}}"
+    - debug: var=task_url
+
+    - name: Wait for the refresh to end
+      uri:
+        url: "{{ task_url }}"
+        method: GET
+        validate_certs: False
+        headers:
+          X-Auth-Token: "{{ manageiq.api_token }}"
+          Content-Type: "application/json"
+        status_code: 200
+      register: task_result
+      until: task_result.json.state == 'Finished' or task_result.json.status == 'Error'
+      failed_when: task_result.json.status == 'Error'
+      retries: "{{max_retries}}"
+      delay: "{{retry_interval}}"
+    - debug: var=task_result
+
+    - set_fact: find_db_vm_url="{{ manageiq.api_url }}/api/vms?expand=resources&attributes=href,uid_ems&filter[]=uid_ems='{{ db_vm_uuid }}'"
+    - set_fact: find_app_vm_url="{{ manageiq.api_url }}/api/vms?expand=resources&attributes=href,uid_ems&filter[]=uid_ems='{{ app_vm_uuid }}'"
+
+    - debug: var=find_db_vm_url
+    - debug: var=find_app_vm_url
+
+    - name: Call to CloudForms to find href for vm_uuids
+      uri:
+        url: "{{ item }}"
+        method: GET
+        validate_certs: no
+        headers:
+           X-Auth-Token: "{{ manageiq.api_token }}"
+           Content-Type: "application/json"
+        body_format: json
+        return_content: yes
+      register: token_output
+      with_items:
+        - "{{ find_db_vm_url }}"
+        - "{{ find_app_vm_url }}"
+
+    - debug: var=token_output
+
+    - set_fact: cf_db_vm_href="{{ token_output.results[0].json.resources[0].href }}"
+    - set_fact: cf_app_vm_href="{{ token_output.results[1].json.resources[0].href }}"
+
+    - debug: var=cf_db_vm_href
+    - debug: var=cf_app_vm_href
+
+    - name: Create an array of vms
+      set_fact:
+        vms: "{{ vms|default([]) + [ { 'href': svc_url, 'resource':  { 'href': item } } ] }}"
+      with_items:
+        - "{{ cf_db_vm_href }}"
+        - "{{ cf_app_vm_href }}"
+
+    - debug: var=vms
+
+    - name: Register vm with the service
+      uri:
+        url: "{{ manageiq.api_url }}/api/services"
+        method: POST
+        body_format: json
+        body:
+          action: add_resource
+          resources : "{{ vms }}"
+        validate_certs: False
+        headers:
+          X-Auth-Token: "{{ manageiq.api_token }}"
+          Content-Type: "application/json"
+        status_code: 200
+      register: output
+
+    - debug: var=output.json.results[0].success
+
+- hosts: db_provisioned
+  name: Deploy Oracle 12c
+  user: root
+  become: false
+  gather_facts: true
+  vars_files:
+    # User defined variables for infrastructure
+    - infra-vars.yml
+    - db-vars.yml
+    # User Passwords
+    - secrets.yml
+  roles:
+    - role: linux-oracle
+    - role: oracle-install
+      sudo_user: '{{ oracle_user }}'
+
+  pre_tasks:
+    # ==> Fix hosts file. Remove hostname from local loop. A workaround for vagrant
+    # adding hostname to local loop
+    - name: fix host file 127.0.0.1 entry
+      lineinfile: >
+        dest=/etc/hosts
+        regexp='^127\.0\.0\.1'
+        line='127.0.0.1 localhost localhost.localdomain localhost4 localhost4.localdomain4'
+        owner=root group=root mode=0644
+
+- name: Configure CentOS Linux 7.1 with WebLogic 12c R2 domain
+  hosts: app_provisioned
+  user: root
+  become: false
+  gather_facts: true
+
+  vars_files:
+    # User defined variables for infrastructure
+    - infra-vars.yml
+    # Common properties. You may not delete this
+    - wls-vars.yml
+    # Infrastructure passwords
+    - secrets.yml
+  roles:
+    - role: linux-wls
+    - role: linux-jdk
+    - role: fmw-software
+      sudo_user: '{{ oracle_user }}'
+    - role: fmw-domain
+      sudo_user: '{{ oracle_user }}'
+    - role: node-manager
+    - role: start-admin-server
+      sudo_user: '{{ oracle_user }}'
+    - role: fmw-managed-server
+      sudo_user: '{{ oracle_user }}'
+  pre_tasks:
+    # ==> Fix hosts file. Remove hostname from local loop. A workaround for
+    # remove hostname to local loop
+    - name: fix host file 127.0.0.1 entry
+      lineinfile: dest=/etc/hosts regexp='^127\.0\.0\.1' line='127.0.0.1 localhost localhost.localdomain localhost4 localhost4.localdomain4' owner=root group=root mode=0644
